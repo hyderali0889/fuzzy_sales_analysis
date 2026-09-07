@@ -1,0 +1,92 @@
+
+
+services:
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg18     # or latest-pg16 / latest-pg17
+    container_name: kegel_project_app1
+    restart: unless-stopped
+    ports:
+      - "5432:5432"                              # Change host port if 5432 is already used
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Hello@123    # ← Change this!
+      POSTGRES_DB: timeseries_db                 # Default database name
+      TIMESCALEDB_TELEMETRY: "off"               # Recommended to disable telemetry
+    volumes:
+      - timescaledb_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: 
+      - postgres 
+      - -c 
+      - shared_preload_libraries=timescaledb
+      - -c 
+      - timescaledb.telemetry_level=off
+
+
+  zookeeper:
+      image: confluentinc/cp-zookeeper:7.5.0
+      container_name: kegel_project_app2
+      restart: unless-stopped
+      ports:
+        - "2181:2181"
+      environment:
+        ZOOKEEPER_CLIENT_PORT: 2181
+        ZOOKEEPER_TICK_TIME: 2000
+      healthcheck:
+        test: ["CMD", "nc", "-z", "localhost", "2181"]   # or use echo ruok | nc
+        interval: 10s
+        timeout: 5s
+        retries: 15
+        start_period: 30s
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kegel_project_app3
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+
+  kafka-connect:
+    image: debezium/connect:2.4        # This image already has Debezium built in
+    container_name: kegel_project_app4
+    depends_on:
+      - kafka
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: debezium_connect_configs
+      OFFSET_STORAGE_TOPIC: debezium_connect_offsets
+      STATUS_STORAGE_TOPIC: debezium_connect_statuses
+
+
+
+# Define the named volume (persists even if container is removed)
+volumes:
+  timescaledb_data:
