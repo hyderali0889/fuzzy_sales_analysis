@@ -9,7 +9,7 @@
 
 
 -- create table order_items( 
---     order_id numeric(10) primary key,
+--     order_id numeric(10) not null,
 --     product_id numeric(10) not null,
 --     quantity numeric(10) not null,
 --     price numeric(10) not null
@@ -31,3 +31,8 @@
 
 
 -- select * from customers;
+
+
+-- DELETE From order_items where order_id > 0;
+
+-- drop table order_items;
